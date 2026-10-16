@@ -37,7 +37,7 @@
   \state{BC}
   \country{Canada}}
 
-\author{Shaaz Jahan}
+\author{Shaaz E Jahan}
 \affiliation{%
   \institution{British Columbia Institute of Technology}
   \city{Burnaby}
@@ -247,7 +247,6 @@ low precision; and FlashAttention-4~\cite{zadouri2026flashattention4} co-designs
 the algorithm and kernel for Blackwell, overlapping matrix multiplication with
 the softmax and memory work that now dominate.
 
-% TODO: what problem/application will you apply it to?
 \lead{Application.}
 We apply the FlashAttention family to long-sequence Transformer attention,
 studied as a controlled single-GPU micro-benchmark rather than full model
@@ -395,10 +394,65 @@ documented as part of the limitations analysis (RQ6 and RQ7).
 \label{sec:team}
 
 \subsection{Role Assignments}
-% TODO: who does what.
+Table~\ref{tab:roles} assigns each member a primary area of responsibility that
+maps onto the structure of the study. All members contribute to the final paper
+and presentation.
+
+\begin{table}[h]
+  \centering
+  \caption{Primary role assignments.}
+  \label{tab:roles}
+  \small
+  \begin{tabular}{@{}lp{0.62\linewidth}@{}}
+    \toprule
+    \textbf{Member} & \textbf{Primary responsibility} \\
+    \midrule
+    Shaaz E Jahan & Mathematical and algorithmic preliminaries for all methods: the
+      naive implementation, each FlashAttention variant, and the baselines. \\
+    Jason Fakidis & The primary study: experiments comparing FlashAttention-1
+      against the traditional baselines. \\
+    Bahaa Al-Juboori & The lineage study: FA1/2/3/4 comparisons across GPU
+      generations (Ampere, Hopper, Blackwell). \\
+    Aneet Kaur & Validation and discussion: verifying each experiment meets the
+      outcomes set by the research questions, interpreting the results, and
+      preparing the discussion. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \subsection{Timeline}
-% TODO: week-by-week plan.
+Table~\ref{tab:timeline} gives the week-by-week plan for Weeks~8 to~14. Work is
+sequenced so that the preliminaries precede implementation, the two experimental
+studies run in parallel once the environment is ready, and validation follows the
+collection of results.
+
+\begin{table}[h]
+  \centering
+  \caption{Project timeline (Weeks 8 to 14).}
+  \label{tab:timeline}
+  \small
+  \begin{tabular}{@{}lp{0.66\linewidth}@{}}
+    \toprule
+    \textbf{Week} & \textbf{Activity} \\
+    \midrule
+    8 & Finalize scope, methods, and research questions; stand up the shared
+      repository; secure GPU access. Shaaz begins the mathematical and
+      algorithmic preliminaries. \\
+    9 & Preliminaries completed; implement and verify the baselines and the
+      benchmark harness (timing, memory, out-of-memory capture). \\
+    10 & Pilot runs: confirm FA1/FA2 and the baselines run correctly on Ampere,
+      and confirm FA3 (Hopper) and FA4 (Blackwell) compatibility. \\
+    11 & Jason runs the primary study (FA1 vs.\ baselines); Bahaa begins the
+      lineage study (FA1/2/3/4 across Ampere, Hopper, Blackwell). \\
+    12 & Complete both studies; collect repeated measurements with mean and
+      standard deviation. \\
+    13 & Aneet validates results against the research-question outcomes;
+      interpret findings and draft the discussion; produce figures and tables. \\
+    14 & Finalize the paper, repository documentation, and presentation; all
+      members rehearse. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{references}
