@@ -1,0 +1,487 @@
+%% COMP 9060 Group Project -- Research Proposal (Week 7/8, 15%)
+%% Option B: Modern Algorithm Application -- FlashAttention-4
+%% proposal_draft.tex -- SKELETON ONLY
+%%   Top-level sections = Research Proposal rubric criteria.
+%%   Subsections        = required Option B proposal content under each criterion.
+%% Format: ACM Conference Proceedings Primary Article Template (acmart, sigconf)
+\documentclass[sigconf,nonacm]{acmart}
+
+\settopmatter{printacmref=false}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+%% Italic run-in lead-in with normal paragraph spacing (acmart-safe; avoids the
+%% large vertical skip that \paragraph inserts).
+\newcommand{\lead}[1]{\textit{#1}\quad}
+
+%% Modest spacing between paragraphs for readability (acmart-safe; does not
+%% redefine sectioning commands).
+\setlength{\parskip}{0.4\baselineskip}
+
+%% For the tiling / online-softmax schematic in Appendix C.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,decorations.pathreplacing}
+
+%% For algorithm pseudocode blocks in the appendices.
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\begin{document}
+
+\title{A Reproducibility Benchmark of the FlashAttention Family Against Classical and Approximate Attention}
+
+\author{Bahaa Al-Juboori}
+\affiliation{%
+  \institution{British Columbia Institute of Technology}
+  \city{Burnaby}
+  \state{BC}
+  \country{Canada}}
+
+\author{Shaaz Jahan}
+\affiliation{%
+  \institution{British Columbia Institute of Technology}
+  \city{Burnaby}
+  \state{BC}
+  \country{Canada}}
+
+\author{Jason Fakidis}
+\affiliation{%
+  \institution{British Columbia Institute of Technology}
+  \city{Burnaby}
+  \state{BC}
+  \country{Canada}}
+
+\author{Aneet Kaur}
+\affiliation{%
+  \institution{British Columbia Institute of Technology}
+  \city{Burnaby}
+  \state{BC}
+  \country{Canada}}
+
+\renewcommand{\shortauthors}{Al-Juboori, Jahan, Fakidis, Kaur}
+
+\begin{abstract}
+\itshape
+Transformer self-attention costs time and memory that grow quadratically in
+sequence length, and on modern GPUs this cost is dominated by data movement
+rather than arithmetic. The FlashAttention family addresses this with IO-aware
+exact attention: it reorganizes the computation to respect the GPU memory
+hierarchy, achieving large speedups and linear memory with no approximation. We
+propose to benchmark this family, from the original FlashAttention through its
+hardware-specialized successors, against traditional exact and approximate
+baselines. Using single-GPU micro-benchmarks that sweep sequence length, masking,
+and pass type, we measure runtime, throughput, peak memory, maximum context
+before out-of-memory, and numerical accuracy. Our goal is to test whether the
+claimed advantages hold on accessible hardware, to isolate how much of the
+advantage comes specifically from IO-awareness, and to document the practical
+limits of adoption, including the alpha-stage status of the newest kernel and the
+degree to which production libraries have already absorbed its techniques.
+\end{abstract}
+
+\keywords{attention, Transformers, GPU kernels, IO-awareness, FlashAttention}
+
+\maketitle
+
+%% ===== Rubric criterion 1: Problem Definition & Motivation (25%) =====
+\section{Problem Definition \& Motivation}
+\label{sec:problem}
+
+\subsection{Problem}
+Self-attention is the mechanism that lets a Transformer~\cite{vaswani2017attention}
+relate every position in a sequence to every other. For a sequence of length $N$,
+each position is represented by a query, key, and value vector of dimension $d$,
+stacked into matrices $Q,K,V \in \mathbb{R}^{N\times d}$. Attention computes a
+score between every query and every key, normalizes these scores with a row-wise
+softmax, and uses them to take a weighted average of the values:
+$\mathrm{softmax}(QK^\top/\sqrt{d})\,V$. The intermediate score matrix $QK^\top$
+therefore has one entry for every pair of positions.
+
+That pairwise structure is the source of the cost. The score matrix is
+$N\times N$, so forming it, applying softmax, and multiplying by $V$ take time and
+memory that grow quadratically in $N$. On a modern GPU the binding constraint is
+not the arithmetic but the \emph{memory traffic}: the processor's compute
+throughput far exceeds its memory bandwidth, and the memory hierarchy is steeply
+tiered, with a small, fast on-chip SRAM sitting above a large, slow
+high-bandwidth memory (HBM). A naive implementation writes the full $N\times N$
+matrix to HBM and reads it back, so attention becomes \emph{memory-bound}: its
+speed is governed by moving the quadratic intermediate to and from HBM, not by
+the floating-point operations.
+
+The consequence is that long context is expensive precisely where it is most
+useful. As $N$ grows, the quadratic memory and traffic quickly dominate runtime
+and exhaust GPU memory, which has historically capped the sequence lengths
+Transformers can handle. The problem we study is whether this bottleneck can be
+removed \emph{without} changing the function computed, by reorganizing the
+computation to respect the memory hierarchy rather than approximating attention,
+and, concretely, whether the FlashAttention family delivers that in practice and
+under what conditions.
+
+\subsection{Motivation}
+Long context has become central to modern machine learning: large language
+models, long-document understanding, and high-resolution vision all depend on
+attending over many thousands of positions, and the quadratic cost of attention
+is the binding constraint on how far they can scale. Making exact attention
+faster and more memory-efficient therefore pays off broadly, improving latency,
+throughput, and the maximum context that fits on a given GPU. Crucially, the
+IO-aware approach achieves this \emph{without} approximating attention, so it
+avoids the accuracy penalty that sub-quadratic methods incur; where it applies,
+it is close to a free improvement, which is why it has largely displaced earlier
+efficiency techniques in practice.
+
+This makes the FlashAttention family worth studying empirically rather than
+taking its advantages for granted. Its performance claims are reported by the
+authors on specific, often high-end, hardware, while the production libraries
+(cuDNN and PyTorch SDPA) have progressively absorbed the same techniques, so how
+much advantage remains in practice is an open question. The newest version,
+FlashAttention-4, is both very recent and an alpha-stage release, which raises
+real questions of software maturity, numerical precision, and reproducibility. An
+independent benchmark on accessible hardware, spanning the lineage from the
+original algorithm to its latest variant, is therefore a useful contribution: it
+tests whether the claimed benefits hold, isolates where they come from, and
+documents the practical cost of adopting them.
+
+%% ===== Rubric criterion 2: Literature Review (35%) =====
+\section{Literature Review}
+\label{sec:litreview}
+We review the lines of research that led to our modern algorithm, following the
+intellectual lineage that FlashAttention~\cite{dao2022flashattention} itself
+traces. Each paragraph treats one line of work; a theoretical comparison and the
+supporting mathematics are given in the supplementary appendices.
+
+\lead{Origins of attention and the quadratic problem.}
+Attention originated as a memory-programming idea: Schmidhuber's fast-weight
+controllers, in which a slow network learns to generate the weights of a fast
+network through outer products~\cite{schmidhuber1992fastweights}, were later
+reframed explicitly as ``attention to the recent past''~\cite{ba2016fastweights}.
+The modern, content-based form was introduced for neural machine
+translation~\cite{bahdanau2015nmt} and then made the center of an architecture by
+the Transformer~\cite{vaswani2017attention}. The Transformer's self-attention,
+however, has time and memory cost quadratic in sequence length $N$, which is the
+bottleneck all later work addresses.
+
+\lead{IO-aware runtime optimization.}
+A separate, older line from systems and computer architecture studies how to
+optimize reads and writes across a memory hierarchy. The input/output complexity
+model~\cite{aggarwal1988io} formalizes counting accesses to slow versus fast
+memory, and the Roofline model~\cite{williams2009roofline} frames performance in
+terms of arithmetic intensity against memory bandwidth. Applied to Transformers,
+this perspective shows that data movement, not arithmetic, is the dominant
+cost~\cite{ivanov2021datamovement}. This line supplies the key principle that our
+modern algorithm brings to attention.
+
+\lead{Approximate (sub-quadratic) attention.}
+The first response to the quadratic cost was to approximate attention. Sparse and
+hashing-based methods such as Reformer reduce cost by attending to a
+subset~\cite{kitaev2020reformer}, while low-rank and kernel methods achieve
+linear complexity: Performer uses random features~\cite{choromanski2021performer},
+Linformer projects to a low-rank subspace~\cite{wang2020linformer}, and linear
+attention reformulates the computation as a recurrence~\cite{katharopoulos2020linear}.
+These methods reduce FLOPs but often fail to deliver wall-clock speedup, because
+theoretical efficiency does not automatically translate to hardware
+efficiency, a mismatch known as the hardware
+lottery~\cite{hooker2020hardwarelottery}. This gap is precisely what motivates an
+IO-aware, exact approach.
+
+\lead{Exact, memory-reduced attention.}
+A second response keeps attention exact and attacks memory instead. The online
+softmax normalizer computes the softmax incrementally over blocks without
+materializing a full row~\cite{milakov2018online}, the primitive that makes
+tiled exact attention possible. Rabe and Staats then showed self-attention needs
+only sub-quadratic \emph{memory} while remaining exact, though its time stays
+$O(N^2)$~\cite{rabe2021selfattention}. These exact-but-not-IO-aware methods are
+the natural comparison points for our modern algorithm.
+
+\lead{Synthesis: the FlashAttention lineage.}
+FlashAttention~\cite{dao2022flashattention} unifies IO-awareness with exact
+attention, using tiling and online softmax to keep the $N\times N$ matrix out of
+high-bandwidth memory. The result is exact (not an approximation), faster in
+wall-clock time, and linear in memory. Its stated limitation, that each kernel
+must be hand-written in CUDA, drove the subsequent hardware co-design line:
+FlashAttention-2~\cite{dao2023flashattention2},
+FlashAttention-3~\cite{shah2024flashattention3}, and our modern algorithm
+FlashAttention-4~\cite{zadouri2026flashattention4}, which this project
+benchmarks.
+
+%% ===== Option B required content: Modern Algorithm & Baseline Selection =====
+\section{Methods Under Study}
+\label{sec:methods}
+This section identifies the modern algorithm we study and the baselines we
+compare it against: Section~\ref{subsec:modern} selects the FlashAttention family
+and explains why it is an advancement, and Section~\ref{subsec:baselines} lists
+the traditional methods used for comparison.
+
+\subsection{Modern Algorithm Selection}
+\label{subsec:modern}
+\lead{Choice of modern algorithm.}
+We select the FlashAttention family of IO-aware exact-attention algorithms as our
+modern algorithm, centering our study on the original FlashAttention
+(FA1)~\cite{dao2022flashattention}, introduced in 2022. FA1 established the core
+principle the whole family shares: computing exact attention while minimizing
+data movement between GPU high-bandwidth memory and on-chip SRAM, using tiling
+together with an online-softmax formulation. We treat FA1 as the primary object
+of study because it defines this idea, and we additionally examine its modern
+variants: FlashAttention-2 (2023)~\cite{dao2023flashattention2},
+FlashAttention-3 (2024)~\cite{shah2024flashattention3}, and FlashAttention-4
+(2026)~\cite{zadouri2026flashattention4}, which keep FA1's algorithmic core
+unchanged while re-engineering the kernel for successive GPU generations.
+
+\lead{Why it is an advancement.}
+FA1's central advance is a change of perspective: because attention is
+memory-bound rather than compute-bound on GPUs, the cost that matters is data
+movement between high-bandwidth memory (HBM) and on-chip SRAM, not arithmetic.
+By tiling the computation and using an online-softmax formulation, FA1 avoids
+ever writing the $N\times N$ score matrix to HBM, which reduces memory from
+quadratic to linear in sequence length and cuts HBM traffic
+accordingly~\cite{dao2022flashattention}. Crucially this is achieved with
+\emph{no approximation}: FA1 computes exactly the same function as standard
+attention, so it delivers wall-clock speedups (up to $7.6\times$ on GPT-2 in the
+original paper) without the accuracy trade-off that the approximate methods in
+Section~\ref{sec:litreview} incur, and it enables context lengths that were
+previously infeasible. Each later version keeps this exact IO-aware core and
+targets the next hardware bottleneck:
+FlashAttention-2~\cite{dao2023flashattention2} improves work partitioning across
+thread blocks and warps and reduces non-matmul operations, roughly doubling
+throughput on A100; FlashAttention-3~\cite{shah2024flashattention3} exploits
+Hopper asynchrony (warp specialization and overlapped matmul/softmax) and FP8
+low precision; and FlashAttention-4~\cite{zadouri2026flashattention4} co-designs
+the algorithm and kernel for Blackwell, overlapping matrix multiplication with
+the softmax and memory work that now dominate.
+
+% TODO: what problem/application will you apply it to?
+\lead{Application.}
+We apply the FlashAttention family to long-sequence Transformer attention,
+studied as a controlled single-GPU micro-benchmark rather than full model
+training: we isolate one attention layer and sweep sequence length, masking, and
+pass type, measuring runtime, throughput, peak memory, and the maximum context
+length before out-of-memory. This application lets us
+test, on accessible GPU hardware, whether FA1's IO-aware principle and its
+hardware-specialized successors deliver their claimed benefits in practice.
+
+\subsection{Baseline Selection}
+\label{subsec:baselines}
+\lead{Baselines.}
+We compare FlashAttention against four traditional baselines that predate it and
+span the two established families of attention computation, exact and
+approximate, satisfying the requirement of 2 to 4 classical comparisons. These are
+the methods against which FlashAttention's original contribution is properly
+measured; the later FlashAttention versions and the production cuDNN/SDPA kernel
+are the same algorithmic family and are therefore used as references in the
+lineage study rather than as traditional baselines.
+
+\lead{Naive scaled dot-product attention.}
+The standard implementation~\cite{vaswani2017attention} materializes the full
+$N\times N$ score matrix in GPU memory, giving $O(N^2)$ memory and memory traffic.
+It is the canonical ``before FlashAttention'' reference and the method whose
+quadratic cost motivated the entire line of work.
+
+\lead{Rabe-Staats memory-efficient attention.}
+This method~\cite{rabe2021selfattention} computes \emph{exact} attention with
+sub-quadratic memory via lazy-softmax chunking, but its time stays $O(N^2)$ and
+it is not IO-aware. Including it lets us isolate how much of FlashAttention's
+advantage comes specifically from IO-aware tiling rather than chunking alone.
+
+\lead{Approximate attention (Performer, Linformer).}
+These represent the sub-quadratic family that trades exactness for scalability:
+Performer approximates the softmax kernel with random
+features~\cite{choromanski2021performer}, and Linformer projects keys and values
+to a low-rank subspace~\cite{wang2020linformer}. Both achieve near-linear cost
+but introduce an accuracy gap relative to exact attention, the trade-off
+FlashAttention avoids, and the basis of our exact-versus-approximate comparison.
+
+\lead{PyTorch SDPA / cuDNN (production reference).}
+We additionally report the fused SDPA/cuDNN backend as a strong production
+reference. Because modern SDPA dispatches to FlashAttention-class kernels, it is
+not a traditional baseline; we include it to show how a well-engineered library
+compares on each GPU, and to avoid overstating gains against a naive strawman.
+
+%% ===== Rubric criterion 3: Plan & Methodology (30%) =====
+\section{Plan \& Methodology}
+\label{sec:plan}
+This section states the questions the study will answer and the experiments
+designed to answer them: Section~\ref{subsec:rqs} sets out the research
+questions, and Section~\ref{subsec:expplan} describes the benchmark design,
+swept parameters, metrics, and reproducibility measures.
+
+\subsection{Research Questions}
+\label{subsec:rqs}
+Our research questions address the advantages claimed, the conditions under which
+we expect them, and the potential limitations; the experiments that will test
+them are described in the Experimental Plan below.
+
+\lead{Claimed advantages.}
+Does FlashAttention's IO-aware exact attention deliver its claimed advantages
+over traditional baselines, namely lower runtime, higher throughput, and $O(N)$
+rather than $O(N^2)$ memory (RQ1)? We further ask how much of this advantage comes
+specifically from IO-aware tiling rather than chunking alone, isolated by
+comparison with the exact but non-IO-aware Rabe-Staats
+method~\cite{rabe2021selfattention} (RQ2); and whether FlashAttention matches the
+efficiency of approximate methods such as
+Performer~\cite{choromanski2021performer} and
+Linformer~\cite{wang2020linformer} while incurring no approximation error (RQ3).
+
+\lead{Conditions for better performance.}
+Under what conditions is the advantage largest? We expect it to grow with
+sequence length, where the quadratic cost dominates, and to differ between causal
+and non-causal masking, since causal masking lets the kernel skip roughly half of
+the score blocks (RQ5). We also ask whether the advantage holds across GPU
+generations: does each FlashAttention version reproduce its claimed improvement
+over its predecessor, with FlashAttention-2 over
+FlashAttention-1~\cite{dao2023flashattention2} on Ampere,
+FlashAttention-3~\cite{shah2024flashattention3} on Hopper, and
+FlashAttention-4~\cite{zadouri2026flashattention4} on Blackwell (RQ4)?
+
+\lead{Potential limitations.}
+What are the practical limits of adopting FlashAttention (RQ6)? These include
+hardware dependence (each version targets a specific GPU generation), software
+maturity (the FlashAttention-4 kernel is an alpha-stage release), numerical
+precision across BF16/FP8/FP4, and reproducibility. We further ask whether the
+advantage is durable: because the production cuDNN/SDPA library has progressively
+absorbed FlashAttention's techniques, with FlashAttention-4 reporting only a
+modest margin over recent cuDNN, how much benefit remains for the research kernel
+on current hardware (RQ7)?
+
+\subsection{Experimental Plan}
+\label{subsec:expplan}
+We evaluate FlashAttention through controlled single-GPU micro-benchmarks of one
+attention layer. The plan comprises a primary study against traditional baselines
+(RQ1 to RQ3), a per-generation lineage study (RQ4), and shared limitation analyses
+(RQ6 and RQ7).
+
+\lead{Methods.}
+The methods under study are FlashAttention-1/2,
+FlashAttention-3 (Hopper build), and FlashAttention-4. Traditional baselines are
+naive attention~\cite{vaswani2017attention},
+Rabe-Staats memory-efficient attention~\cite{rabe2021selfattention}, and the
+approximate methods Performer~\cite{choromanski2021performer} and
+Linformer~\cite{wang2020linformer}; PyTorch SDPA/cuDNN serves as a production
+reference.
+
+\lead{Swept parameters.}
+We sweep three parameters directly: sequence length $N \in \{512, 1\mathrm{K},
+2\mathrm{K}, 4\mathrm{K}, 8\mathrm{K}, 16\mathrm{K}, 32\mathrm{K}, 64\mathrm{K}\}$
+(extended until out-of-memory); masking (causal vs.\ non-causal), since causal
+masking skips roughly half the score blocks; and pass type (forward vs.\
+forward+backward), since the backward pass recomputes attention tiles. Head
+dimension is fixed at $128$ (with $64$ reported as a secondary point) and batch
+size is held constant, so that $N$ is isolated as the primary axis.
+
+\lead{Platform axes.}
+Two further axes are coupled to hardware rather than swept freely. \emph{GPU
+generation}: FA1/FA2 and the traditional baselines run on Ampere (A100), FA3 on
+Hopper (H100), and FA4 on Blackwell (RTX PRO 6000 Blackwell). \emph{Precision}:
+BF16 is used on all platforms for comparability, with FP8 added on Hopper (FA3)
+and FP4/MXFP8 on Blackwell (FA4), since these low-precision modes exist only on
+the newer hardware. We therefore report BF16 as the common axis and treat FP8/FP4
+as platform-specific extensions. These are single-GPU spot-rented instances; the
+full sweep requires only a few GPU-hours per platform.
+
+\lead{Metrics and protocol.}
+For each configuration we record forward and forward+backward latency, throughput
+(tokens/s and TFLOP/s), peak GPU memory, maximum $N$ before out-of-memory,
+and, for approximate methods and low-precision kernels, numerical error
+relative to exact attention. Each configuration is warmed up and repeated (e.g.\
+ten runs) with mean~$\pm$~standard deviation reported, and correctness is
+verified by asserting that each exact method agrees with naive attention within
+floating-point tolerance.
+
+\lead{Reproducibility.}
+We pin and report GPU model, driver, CUDA, PyTorch, and kernel versions, and
+release all benchmark scripts. The main practical risks, the alpha-stage
+FlashAttention-4 kernel and precision-dependent numerical behavior, are
+documented as part of the limitations analysis (RQ6 and RQ7).
+
+%% ===== Rubric criterion 4: Team Organization (10%) =====
+\section{Team Organization}
+\label{sec:team}
+
+\subsection{Role Assignments}
+% TODO: who does what.
+
+\subsection{Timeline}
+% TODO: week-by-week plan.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\clearpage
+\appendix
+
+\section{Requirements Coverage and Rubric Mapping}
+\label{app:coverage}
+This appendix lists every deliverable requirement and rubric item for the
+research proposal and maps each to where this document satisfies it. Table~
+\ref{tab:content} covers the Option~B required-content items; Table~
+\ref{tab:rubric} covers the grading rubric; the remaining items cover format and
+submission requirements.
+
+\begin{table}[h]
+  \centering
+  \caption{Option B required-content items and where each is addressed.}
+  \label{tab:content}
+  \small
+  \begin{tabular}{@{}p{0.46\linewidth}p{0.44\linewidth}@{}}
+    \toprule
+    \textbf{Required content} & \textbf{Where addressed} \\
+    \midrule
+    Problem and motivation &
+      Sec.~\ref{sec:problem} (Problem and Motivation) \\
+    Modern algorithm: which, cited, with year &
+      Sec.~\ref{subsec:modern}, ``Choice of modern algorithm'' (FlashAttention,
+      2022, with the 2023/2024/2026 variants) \\
+    Modern algorithm: why an advancement &
+      Sec.~\ref{subsec:modern}, ``Why it is an advancement'' \\
+    Modern algorithm: problem/application &
+      Sec.~\ref{subsec:modern}, ``Application'' \\
+    Baseline selection (2--4 traditional) &
+      Sec.~\ref{subsec:baselines} (naive, Rabe-Staats, Performer, Linformer;
+      SDPA/cuDNN as reference) \\
+    Research questions: claimed advantages &
+      Sec.~\ref{subsec:rqs}, ``Claimed advantages'' (RQ1--RQ3) \\
+    Research questions: conditions &
+      Sec.~\ref{subsec:rqs}, ``Conditions'' (RQ4--RQ5) \\
+    Research questions: limitations &
+      Sec.~\ref{subsec:rqs}, ``Potential limitations'' (RQ6--RQ7) \\
+    Research questions: experiments &
+      Sec.~\ref{subsec:expplan} (Experimental Plan) \\
+    Team plan: roles and timeline &
+      Sec.~\ref{sec:team} (Role Assignments and Timeline) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Research Proposal rubric (15\% of project grade) and how this
+  document addresses each criterion.}
+  \label{tab:rubric}
+  \small
+  \begin{tabular}{@{}p{0.22\linewidth}cp{0.50\linewidth}@{}}
+    \toprule
+    \textbf{Criterion} & \textbf{Wt.} & \textbf{How addressed} \\
+    \midrule
+    Problem Definition \& Motivation & 25\% &
+      Sec.~\ref{sec:problem}: first-principles problem statement and two-paragraph
+      motivation \\
+    Literature Review & 35\% &
+      Sec.~\ref{sec:litreview}: five categories tracing the lineage, with 10+
+      cited sources and a theory table (in the supplementary appendices) \\
+    Plan \& Methodology & 30\% &
+      Sec.~\ref{sec:plan}: research questions (RQ1--RQ7) and a detailed
+      experimental plan with swept parameters, metrics, and reproducibility \\
+    Team Organization & 10\% &
+      Sec.~\ref{sec:team}: role assignments and a week-by-week timeline \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Format and submission requirements.}
+\begin{itemize}
+  \item \emph{ACM template}: the document uses the ACM Primary Article
+    (\texttt{acmart}, \texttt{sigconf}) template.
+  \item \emph{Length (1--2 pages)}: the main body targets the required length;
+    appendices and references are supplementary.
+  \item \emph{Citations}: all sources are cited in ACM reference format via
+    BibTeX.
+\end{itemize}
+
+\end{document}
