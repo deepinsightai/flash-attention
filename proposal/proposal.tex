@@ -375,6 +375,17 @@ the newer hardware. We therefore report BF16 as the common axis and treat FP8/FP
 as platform-specific extensions. These are single-GPU spot-rented instances; the
 full sweep requires only a few GPU-hours per platform.
 
+To keep comparisons fair, each comparison is made on a single machine. The
+primary study (RQ1 to RQ3), which compares FlashAttention against the traditional
+baselines, runs entirely on one Ampere (A100) machine, with every method in the
+same language and under the same BF16 precision; we report that machine's
+hardware and software. The lineage study (RQ4) necessarily spans machines because
+FA3 and FA4 require Hopper and Blackwell respectively and cannot run elsewhere; we
+therefore frame it as a set of per-generation comparisons (each FlashAttention
+version against its predecessor on the hardware that version targets) rather than
+a single cross-machine ranking, and we report the hardware and software of every
+machine used.
+
 \lead{Metrics and protocol.}
 For each configuration we record forward and forward+backward latency, throughput
 (tokens/s and TFLOP/s), peak GPU memory, maximum $N$ before out-of-memory,
