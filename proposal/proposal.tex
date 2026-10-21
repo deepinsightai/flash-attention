@@ -261,7 +261,8 @@ hardware-specialized successors deliver their claimed benefits in practice.
 \lead{Baselines.}
 We compare FlashAttention against four traditional baselines that predate it and
 span the two established families of attention computation, exact and
-approximate, satisfying the requirement of 2 to 4 classical comparisons. These are
+approximate, exceeding the three classical comparisons required for the Excellent
+band. These are
 the methods against which FlashAttention's original contribution is properly
 measured; the later FlashAttention versions and the production cuDNN/SDPA kernel
 are the same algorithmic family and are therefore used as references in the
@@ -378,10 +379,14 @@ full sweep requires only a few GPU-hours per platform.
 For each configuration we record forward and forward+backward latency, throughput
 (tokens/s and TFLOP/s), peak GPU memory, maximum $N$ before out-of-memory,
 and, for approximate methods and low-precision kernels, numerical error
-relative to exact attention. Each configuration is warmed up and repeated (e.g.\
-ten runs) with mean~$\pm$~standard deviation reported, and correctness is
-verified by asserting that each exact method agrees with naive attention within
-floating-point tolerance.
+relative to exact attention. All compared methods are implemented in the same
+language (Python/PyTorch) and run on the same machine per platform, whose
+hardware and software we report. Each configuration is warmed up and repeated at
+least ten times per input; we report the \emph{median} running time and its
+spread (minimum--maximum, or interquartile range), and we plot running time
+against sequence length for each method. Correctness is verified by asserting
+that each exact method agrees with naive attention within floating-point
+tolerance.
 
 \lead{Reproducibility.}
 We pin and report GPU model, driver, CUDA, PyTorch, and kernel versions, and
@@ -444,12 +449,14 @@ collection of results.
       and confirm FA3 (Hopper) and FA4 (Blackwell) compatibility. \\
     11 & Jason runs the primary study (FA1 vs.\ baselines); Bahaa begins the
       lineage study (FA1/2/3/4 across Ampere, Hopper, Blackwell). \\
-    12 & Complete both studies; collect repeated measurements with mean and
-      standard deviation. \\
+    12 & Complete both studies; collect at least five repeated measurements per
+      input and record the median and spread. \\
     13 & Aneet validates results against the research-question outcomes;
-      interpret findings and draft the discussion; produce figures and tables. \\
-    14 & Finalize the paper, repository documentation, and presentation; all
-      members rehearse. \\
+      interpret findings and draft the discussion; produce figures and tables.
+      Prepare and rehearse the presentation (delivered this week); submit slides
+      as a PDF. \\
+    14 & Finalize the paper and repository documentation; submit the contribution
+      statement and peer evaluation. \\
     \bottomrule
   \end{tabular}
 \end{table}
