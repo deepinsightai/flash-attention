@@ -12,7 +12,7 @@ Scaled dot-product attention [9] computes
 
 $$
 S = \frac{QK^{\top}}{\sqrt{d}} \in \mathbb{R}^{N \times N}, \qquad
-P = \operatorname{softmax}(S), \qquad
+P = \mathrm{softmax}(S), \qquad
 O = PV \in \mathbb{R}^{N \times d},
 $$
 
@@ -52,7 +52,7 @@ with the $w_i$ orthogonalized. This estimator is unbiased, $\mathbb{E}[\varphi(q
 
 $$
 \widehat{O} = \widehat{D}^{-1} \left( Q' \left( K'^{\top} V \right) \right), \qquad
-\widehat{D} = \operatorname{diag}\left( Q' \left( K'^{\top} \mathbf{1}_N \right) \right).
+\widehat{D} = \mathrm{diag}\left( Q' \left( K'^{\top} \mathbf{1}_N \right) \right).
 $$
 
 Forming the $m \times d$ product $K'^{\top}V$ first avoids the $N \times N$ matrix entirely, giving $\Theta(Nmd)$ time and $\Theta(Nm + md)$ extra memory. The estimator's variance decreases as $1/m$, and $m = \Theta(d \log d)$ features are used in practice. Because $\widehat{O}$ is a ratio of unbiased estimates, it is itself only approximately unbiased. Causal masking requires prefix sums over $K'^{\top}V$, which are either sequential or memory-intensive in practice.
@@ -60,7 +60,7 @@ Forming the $m \times d$ product $K'^{\top}V$ first avoids the $N \times N$ matr
 **Linformer.** Linformer [10] assumes $P$ is approximately low rank and projects keys and values along the sequence dimension with matrices $E, F \in \mathbb{R}^{k \times N}$:
 
 $$
-\widehat{O} = \operatorname{softmax}\left( \frac{Q (EK)^{\top}}{\sqrt{d}} \right) (FV), \qquad Q(EK)^{\top} \in \mathbb{R}^{N \times k}.
+\widehat{O} = \mathrm{softmax}\left( \frac{Q (EK)^{\top}}{\sqrt{d}} \right) (FV), \qquad Q(EK)^{\top} \in \mathbb{R}^{N \times k}.
 $$
 
 This costs $\Theta(Nkd)$ time and $\Theta(Nk)$ memory for the score matrix. A Johnson–Lindenstrauss argument shows that $k = \Theta(d/\varepsilon^2)$ suffices for $\varepsilon$-approximation with high probability, independent of $N$ [10]. Two properties constrain its use in this benchmark. First, $E$ and $F$ are learned parameters sized to a fixed $N$; in an untrained layer, the approximation error depends on their initialization, which we fix to scaled Gaussian random projections. Second, every row of $EK$ mixes all $N$ positions, including future ones, so Linformer does not support causal masking and is excluded from causal experiments.
@@ -111,16 +111,16 @@ m_i^{\mathrm{new}} = \max(m_i, \tilde{m}_{ij}), \qquad
 $$
 
 $$
-O_i \leftarrow \operatorname{diag}(\ell_i^{\mathrm{new}})^{-1} \left( \operatorname{diag}(\ell_i)\, e^{m_i - m_i^{\mathrm{new}}}\, O_i + e^{\tilde{m}_{ij} - m_i^{\mathrm{new}}}\, \tilde{P}_{ij} V_j \right).
+O_i \leftarrow \mathrm{diag}(\ell_i^{\mathrm{new}})^{-1} \left( \mathrm{diag}(\ell_i)\, e^{m_i - m_i^{\mathrm{new}}}\, O_i + e^{\tilde{m}_{ij} - m_i^{\mathrm{new}}}\, \tilde{P}_{ij} V_j \right).
 $$
 
 This is the merge of Lemma 1 applied block-wise, with $O_i$ kept normalized after every step. Causal masking is applied within each tile.
 
-**Backward pass.** FlashAttention stores only $O$ and the statistics $(m, \ell)$. The backward pass reloads tiles of $Q, K, V, O, \mathrm{d}O$, recomputes $S_{ij}$ and $P_{ij} = \operatorname{diag}(\ell_i)^{-1}\exp(S_{ij} - m_i)$ in SRAM, and applies the gradient formulas of §3.2 tile by tile, using $D_i = \sum_k \mathrm{d}O_{ik}\, O_{ik}$. Recomputation increases FLOPs but eliminates the $\Theta(N^2)$ reads of a stored $P$, which reduces wall-clock time because the computation is memory-bound.
+**Backward pass.** FlashAttention stores only $O$ and the statistics $(m, \ell)$. The backward pass reloads tiles of $Q, K, V, O, \mathrm{d}O$, recomputes $S_{ij}$ and $P_{ij} = \mathrm{diag}(\ell_i)^{-1}\exp(S_{ij} - m_i)$ in SRAM, and applies the gradient formulas of §3.2 tile by tile, using $D_i = \sum_k \mathrm{d}O_{ik}\, O_{ik}$. Recomputation increases FLOPs but eliminates the $\Theta(N^2)$ reads of a stored $P$, which reduces wall-clock time because the computation is memory-bound.
 
 **Complexity.** Dao et al. [4] prove the following:
 
-- **Correctness and memory.** FlashAttention returns $O = \operatorname{softmax}(QK^{\top}/\sqrt{d})\,V$ using $O(N^2 d)$ FLOPs and $O(N)$ memory beyond its inputs and outputs.
+- **Correctness and memory.** FlashAttention returns $O = \mathrm{softmax}(QK^{\top}/\sqrt{d})\,V$ using $O(N^2 d)$ FLOPs and $O(N)$ memory beyond its inputs and outputs.
 - **IO.** It requires $\Theta(N^2 d^2 M^{-1})$ HBM accesses, compared with $\Theta(Nd + N^2)$ for standard attention. The backward pass has the same IO complexity.
 - **Lower bound.** No exact attention algorithm can use $o(N^2 d^2 M^{-1})$ HBM accesses for all $M \in [d, Nd]$, so FlashAttention is IO-optimal in this sense.
 
@@ -133,19 +133,19 @@ FlashAttention-2, -3, and -4 compute the same exact function with the same asymp
 **FlashAttention-2.** FlashAttention-2 [3] reduces non-matrix-multiply FLOPs, which execute up to $16\times$ more slowly than matrix multiplies on GPU tensor cores (on an A100, 312 TFLOP/s for FP16 matrix multiplies versus 19.5 TFLOP/s for other FP32 operations). It keeps the output unnormalized until the end. For query block $i$ over key blocks $j = 1, \ldots, T_c$:
 
 $$
-m^{(j)} = \max\left( m^{(j-1)}, \operatorname{rowmax}(S_{ij}) \right), \qquad
+m^{(j)} = \max\left( m^{(j-1)}, \mathrm{rowmax}(S_{ij}) \right), \qquad
 \tilde{P}_{ij} = e^{S_{ij} - m^{(j)}}, \qquad
-\ell^{(j)} = e^{m^{(j-1)} - m^{(j)}}\, \ell^{(j-1)} + \operatorname{rowsum}(\tilde{P}_{ij}),
+\ell^{(j)} = e^{m^{(j-1)} - m^{(j)}}\, \ell^{(j-1)} + \mathrm{rowsum}(\tilde{P}_{ij}),
 $$
 
 $$
-\tilde{O}^{(j)} = \operatorname{diag}\left( e^{m^{(j-1)} - m^{(j)}} \right) \tilde{O}^{(j-1)} + \tilde{P}_{ij} V_j, \qquad
-O_i = \operatorname{diag}\left( \ell^{(T_c)} \right)^{-1} \tilde{O}^{(T_c)}.
+\tilde{O}^{(j)} = \mathrm{diag}\left( e^{m^{(j-1)} - m^{(j)}} \right) \tilde{O}^{(j-1)} + \tilde{P}_{ij} V_j, \qquad
+O_i = \mathrm{diag}\left( \ell^{(T_c)} \right)^{-1} \tilde{O}^{(T_c)}.
 $$
 
 It stores only the log-sum-exp $L_i = m_i + \log \ell_i$, from which the backward pass reconstructs $P_{ij} = \exp(S_{ij} - L_i)$. It also swaps the loop order so that each thread block owns one query block, parallelizes over the sequence dimension in addition to batch and heads, and skips tiles that lie entirely above the diagonal under causal masking. These changes yield roughly a $2\times$ speedup over FlashAttention, reaching 50–73% of peak A100 throughput [3].
 
-**FlashAttention-3.** On the H100, FP16 matrix multiplies run at 989 TFLOP/s while the exponential unit delivers 3.9 TFLOP/s, so the exponentials of the softmax can stall the matrix multiplies [8]. FlashAttention-3 retains the FlashAttention-2 recurrence and overlaps the two: producer warps load tiles asynchronously while consumer warps compute, two warpgroups alternate between softmax and matrix multiply ("ping-pong" scheduling), and the softmax of one block overlaps the score computation of the next. For FP8, it adds per-block quantization scales and *incoherent processing*: $Q$ and $K$ are multiplied by the same random orthogonal matrix $\mathbf{M} = d^{-1/2} H_d \operatorname{diag}(\pm 1)$, where $H_d$ is a Hadamard matrix, so that
+**FlashAttention-3.** On the H100, FP16 matrix multiplies run at 989 TFLOP/s while the exponential unit delivers 3.9 TFLOP/s, so the exponentials of the softmax can stall the matrix multiplies [8]. FlashAttention-3 retains the FlashAttention-2 recurrence and overlaps the two: producer warps load tiles asynchronously while consumer warps compute, two warpgroups alternate between softmax and matrix multiply ("ping-pong" scheduling), and the softmax of one block overlaps the score computation of the next. For FP8, it adds per-block quantization scales and *incoherent processing*: $Q$ and $K$ are multiplied by the same random orthogonal matrix $\mathbf{M} = d^{-1/2} H_d \mathrm{diag}(\pm 1)$, where $H_d$ is a Hadamard matrix, so that
 
 $$
 (Q\mathbf{M})(K\mathbf{M})^{\top} = Q \mathbf{M}\mathbf{M}^{\top} K^{\top} = QK^{\top}.
@@ -176,8 +176,8 @@ Tables 1 and 2 summarize the methods. Only the approximate methods reduce time b
 | Method | Exact | Time (FLOPs) | Extra memory (forward) | Stored for backward | HBM accesses |
 | --- | --- | --- | --- | --- | --- |
 | Standard [9] | Yes | $\Theta(N^2 d)$ | $\Theta(N^2)$ | $\Theta(N^2)$ ($P$) | $\Theta(Nd + N^2)$ |
-| Performer [2] | No | $\Theta(Nmd)$ | $\Theta(Nm + md)$ | $\Theta(Nm + md)$ | $\Theta(Nm + Nd)$$^{\dagger}$ |
-| Linformer [10] | No | $\Theta(Nkd)$ | $\Theta(Nk)$ | $\Theta(Nk)$ | $\Theta(Nk + Nd)$$^{\dagger}$ |
+| Performer [2] | No | $\Theta(Nmd)$ | $\Theta(Nm + md)$ | $\Theta(Nm + md)$ | $\Theta(Nm + Nd)^{\dagger}$ |
+| Linformer [10] | No | $\Theta(Nkd)$ | $\Theta(Nk)$ | $\Theta(Nk)$ | $\Theta(Nk + Nd)^{\dagger}$ |
 | Rabe–Staats [7] | Yes | $\Theta(N^2 d)$ | $O(\sqrt{N})$ chunked | $O(\sqrt{N})$ (checkpointing) | $\Theta(N^2)$ (unfused) |
 | FlashAttention [4] | Yes | $\Theta(N^2 d)$ | $\Theta(N)$ ($m, \ell$) | $\Theta(N)$ ($m, \ell$) | $\Theta(N^2 d^2/M)$ |
 | FlashAttention-2 [3] | Yes | $\Theta(N^2 d)$ | $\Theta(N)$ | $\Theta(N)$ ($L$) | $\Theta(N^2 d^2/M)$ |
@@ -190,7 +190,7 @@ $^{\dagger}$ Our estimate; not analyzed in the original papers. $^{\ddagger}$ Ex
 
 | Method | Year | Key mathematical idea | Causal mask | Target hardware |
 | --- | --- | --- | --- | --- |
-| Standard [9] | 2017 | Direct evaluation of $\operatorname{softmax}(QK^{\top}/\sqrt{d})V$ | Mask after full computation | Any |
+| Standard [9] | 2017 | Direct evaluation of $\mathrm{softmax}(QK^{\top}/\sqrt{d})V$ | Mask after full computation | Any |
 | Linformer [10] | 2020 | Low-rank projection $K \to EK$, $V \to FV$ | Not supported | Any |
 | Performer [2] | 2020 | Random features $\exp(q^{\top}k) \approx \varphi(q)^{\top}\varphi(k)$; reordered product | Prefix sums | Any |
 | Rabe–Staats [7] | 2021 | Chunked online softmax with checkpointing | Supported | Any |
@@ -198,3 +198,27 @@ $^{\dagger}$ Our estimate; not analyzed in the original papers. $^{\ddagger}$ Ex
 | FlashAttention-2 [3] | 2023 | Deferred normalization; log-sum-exp statistic; query-outer loop | Skips masked tiles | Ampere |
 | FlashAttention-3 [8] | 2024 | Asynchronous overlap; incoherent processing for FP8 | Supported | Hopper |
 | FlashAttention-4 [11] | 2026 | Conditional rescaling; polynomial exponential | Supported | Blackwell |
+
+## References
+
+[1] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. 2015. Neural Machine Translation by Jointly Learning to Align and Translate. In *International Conference on Learning Representations (ICLR)*. arXiv:1409.0473.
+
+[2] Krzysztof Choromanski, Valerii Likhosherstov, David Dohan, Xingyou Song, Andreea Gane, Tamás Sarlós, Peter Hawkins, Jared Davis, Afroz Mohiuddin, Lukasz Kaiser, David Belanger, Lucy Colwell, and Adrian Weller. 2021. Rethinking Attention with Performers. In *International Conference on Learning Representations (ICLR)*. arXiv:2009.14794.
+
+[3] Tri Dao. 2024. FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning. In *International Conference on Learning Representations (ICLR)*. arXiv:2307.08691.
+
+[4] Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022. FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. In *Advances in Neural Information Processing Systems (NeurIPS)*. arXiv:2205.14135.
+
+[5] Andrei Ivanov, Nikoli Dryden, Tal Ben-Nun, Shigang Li, and Torsten Hoefler. 2021. Data Movement Is All You Need: A Case Study on Optimizing Transformers. *Proceedings of Machine Learning and Systems (MLSys)* 3 (2021), 711–732.
+
+[6] Maxim Milakov and Natalia Gimelshein. 2018. Online normalizer calculation for softmax. arXiv preprint arXiv:1805.02867.
+
+[7] Markus N. Rabe and Charles Staats. 2021. Self-attention Does Not Need $O(n^2)$ Memory. arXiv preprint arXiv:2112.05682.
+
+[8] Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, and Tri Dao. 2024. FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-Precision. In *Advances in Neural Information Processing Systems (NeurIPS)*. arXiv:2407.08608.
+
+[9] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention Is All You Need. In *Advances in Neural Information Processing Systems (NeurIPS)*. arXiv:1706.03762.
+
+[10] Sinong Wang, Belinda Z. Li, Madian Khabsa, Han Fang, and Hao Ma. 2020. Linformer: Self-Attention with Linear Complexity. arXiv preprint arXiv:2006.04768.
+
+[11] Ted Zadouri, Markus Hoehnerbach, Jay Shah, Timmy Liu, Vijay Thakkar, and Tri Dao. 2026. FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling. arXiv preprint arXiv:2603.05451.
