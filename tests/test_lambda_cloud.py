@@ -2,7 +2,9 @@
 
 import pytest
 
-from scripts import lambda_cloud as lc
+pytest.importorskip("requests")  # the Lambda client runs on the local PC; GPU machines need not have it
+
+from scripts import lambda_cloud as lc  # noqa: E402
 
 TYPES = {
     "gpu_1x_a100_sxm4": {
