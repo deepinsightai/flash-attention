@@ -21,3 +21,9 @@ outputs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local run helpers and stray files
+COMMIT
+.upload-files.txt
+0f72783+working-tree-*
+*.zip

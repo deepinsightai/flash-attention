@@ -1,0 +1,9 @@
+method,gpu,precision,mask,pass_type,N,batch_size,head_dim,heads,timestamp_utc
+naive,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward,65536,1,128,8,2026-11-15T03:25:26Z
+sdpa_math,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward,32768,1,128,8,2026-11-15T03:26:13Z
+naive,NVIDIA A100-SXM4-40GB 40GB,BF16,causal,forward,32768,1,128,8,2026-11-15T03:26:18Z
+sdpa_math,NVIDIA A100-SXM4-40GB 40GB,BF16,causal,forward,32768,1,128,8,2026-11-15T03:26:55Z
+naive,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward_backward,32768,1,128,8,2026-11-15T03:26:59Z
+sdpa_math,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward_backward,32768,1,128,8,2026-11-15T03:30:13Z
+naive,NVIDIA A100-SXM4-40GB 40GB,BF16,causal,forward_backward,32768,1,128,8,2026-11-15T03:30:22Z
+sdpa_math,NVIDIA A100-SXM4-40GB 40GB,BF16,causal,forward_backward,32768,1,128,8,2026-11-15T03:35:37Z
