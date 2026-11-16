@@ -79,9 +79,11 @@ def _causal_linear_attention(qp, kp, v, chunk_size):
     state = torch.zeros(B, H, m, v.shape[-1], dtype=qp.dtype, device=qp.device)
     z = torch.zeros(B, H, m, dtype=qp.dtype, device=qp.device)
     nums, dens = [], []
-    for s in range(0, N, chunk_size):
-        e = min(s + chunk_size, N)
-        qc, kc, vc = qp[:, :, s:e], kp[:, :, s:e], v[:, :, s:e]
+    # torch.split instead of per-chunk slicing. Same chunks and math; slicing made
+    # each chunk's backward allocate and add a full-size gradient (quadratic in N for the causal
+    # backward), while split's backward concatenates the chunk gradients once.
+    chunks = zip(qp.split(chunk_size, dim=2), kp.split(chunk_size, dim=2), v.split(chunk_size, dim=2))
+    for qc, kc, vc in chunks:
         a = torch.tril(torch.matmul(qc, kc.transpose(-2, -1)))
         nums.append(torch.matmul(a, vc) + torch.matmul(qc, state))
         dens.append(a.sum(dim=-1) + torch.einsum("bhcm,bhm->bhc", qc, z))

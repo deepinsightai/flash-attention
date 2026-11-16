@@ -18,10 +18,29 @@ def _run(cmd: list[str], cwd: str | None = None) -> str:
 
 
 def gpu_label(device_index: int = 0) -> str:
-    """Name plus memory size, e.g. 'NVIDIA A100-SXM4-40GB 40GB'. Separates 40 GB from 80 GB A100s."""
+    """Name plus memory size, e.g. 'NVIDIA A100-SXM4-40GB 40GB'. Separates 40 GB from 80 GB A100s.
+
+    Uses nvidia-smi's memory.total (MiB), which matches the marketed size (40960 MiB -> 40GB);
+    PyTorch's usable total (39.5 GiB on an A100 40GB) is the fallback.
+    """
     props = torch.cuda.get_device_properties(device_index)
-    gb = round(props.total_memory / 2**30)
+    mib = _run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits", "-i", str(device_index)])
+    try:
+        gb = round(float(mib.splitlines()[0]) / 1024)
+    except (ValueError, IndexError):
+        gb = round(props.total_memory / 2**30)
     return f"{props.name} {gb}GB"
+
+
+def code_version() -> str:
+    """git commit of the working tree, else the COMMIT file shipped with an upload package."""
+    commit = _run(["git", "rev-parse", "--short", "HEAD"])
+    if commit:
+        return commit
+    from pathlib import Path
+
+    f = Path(__file__).resolve().parents[1] / "COMMIT"
+    return f.read_text(encoding="utf-8").strip() if f.exists() else ""
 
 
 def gpu_slug(label: str) -> str:
@@ -46,7 +65,7 @@ def collect(device_index: int = 0) -> dict:
         "cuda_version": torch.version.cuda or "",
         "triton_version": triton_version,
         "driver_version": driver.splitlines()[0] if driver else "",
-        "git_commit": _run(["git", "rev-parse", "--short", "HEAD"]),
+        "git_commit": code_version(),
     }
 
 

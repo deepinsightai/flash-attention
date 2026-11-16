@@ -59,10 +59,7 @@ def run_config(args, meta, method, N, mask, pass_type, device):
     backward = pass_type == "forward_backward"
     gen = torch.Generator(device=device).manual_seed(args.seed)
     shape = (args.batch, args.heads, N, args.head_dim)
-    q, k, v = (torch.randn(shape, device=device, dtype=dtype, generator=gen) for _ in range(3))
-    if backward:
-        for t in (q, k, v):
-            t.requires_grad_(True)
+    q, k, v, leaves = methods.make_qkv(method, shape, dtype, device, gen, requires_grad=backward)
     fn = methods.build(method, N, args.head_dim, device, args.seed)
 
     err = {}
@@ -73,7 +70,8 @@ def run_config(args, meta, method, N, mask, pass_type, device):
         except torch.OutOfMemoryError:
             err = {}  # the FP64 reference may not fit; leave the error blank
 
-    results = measure(fn, q, k, v, causal=causal, backward=backward, warmup=args.warmup, repeats=args.repeats)
+    results = measure(fn, q, k, v, causal=causal, backward=backward, warmup=args.warmup, repeats=args.repeats,
+                      leaves=leaves)
     stamp = metadata.utc_now()
     rows = []
     for i, m in enumerate(results):

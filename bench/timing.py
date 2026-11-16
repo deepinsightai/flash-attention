@@ -19,11 +19,12 @@ class Measurement:
     peak_memory_mb: float
 
 
-def _call(fn: Callable, q, k, v, causal: bool, grad_out, backward: bool):
+def _call(fn: Callable, q, k, v, causal: bool, grad_out, backward: bool, leaves=None):
     if backward:
         out = fn(q, k, v, causal=causal)
         out.backward(grad_out)
-        q.grad = k.grad = v.grad = None
+        for t in leaves or (q, k, v):  # Clear the leaf tensors (inputs may be views)
+            t.grad = None
         return out
     with torch.no_grad():
         return fn(q, k, v, causal=causal)
@@ -39,11 +40,12 @@ def measure(
     backward: bool,
     warmup: int,
     repeats: int,
+    leaves=None,
 ) -> list[Measurement]:
     """Run warm-up iterations, then `repeats` timed iterations. Raises torch.OutOfMemoryError on OOM."""
     grad_out = torch.randn_like(q) if backward else None
     for _ in range(warmup):
-        _call(fn, q, k, v, causal, grad_out, backward)
+        _call(fn, q, k, v, causal, grad_out, backward, leaves)
     results: list[Measurement] = []
     for _ in range(repeats):
         torch.cuda.synchronize()
@@ -52,7 +54,7 @@ def measure(
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
-        out = _call(fn, q, k, v, causal, grad_out, backward)
+        out = _call(fn, q, k, v, causal, grad_out, backward, leaves)
         end.record()
         torch.cuda.synchronize()
         peak = torch.cuda.max_memory_allocated() - base

@@ -30,14 +30,17 @@ def main():
 
     dev = "cuda"
     shape = (1, args.heads, args.n, args.head_dim)
-    q, k, v = (torch.randn(shape, device=dev, dtype=torch.bfloat16, requires_grad=args.backward) for _ in range(3))
+    q, k, v, leaves = methods.make_qkv(args.method, shape, torch.bfloat16, dev, requires_grad=args.backward)
     fn = methods.build(args.method, args.n, args.head_dim, dev, 0)
     grad = torch.randn_like(q)
 
+    # Clear leaf grads every call so the profiled call has no grad-accumulation kernel
     def call():
         out = fn(q, k, v, causal=args.causal)
         if args.backward:
             out.backward(grad)
+            for t in leaves:
+                t.grad = None
         return out
 
     for _ in range(args.warmup):

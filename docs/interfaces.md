@@ -79,3 +79,21 @@ python -m bench.sweep --methods naive rabe_staats performer linformer sdpa_flash
     --log2n-min 9 --log2n-max 16 --mask both --pass-type both --repeats 10 --check-error
 python -m analysis.benchmark_analysis results/<gpu-slug>/runs.csv --output results/<gpu-slug>/analysis
 ```
+
+## Triton methods (ench/triton_attn/)
+
+Registered automatically when Triton imports (Linux, WSL, Colab). Triton does not run on the
+Windows setup here: Application Control blocks its compiled helper module.
+
+| Registry name | What it is |
+| --- | --- |
+| 	riton_naive | Three unfused kernels; the N x N scores and probabilities live in HBM |
+| 	riton_rabe_staats | Chunked exact attention, one kernel per step, not IO-aware |
+| 	riton_fa1 | FlashAttention: grid over batch*heads, O/m/l round-trip through HBM per block pair |
+| 	riton_fa2 | FlashAttention-2: Q-block parallel, deferred normalization, causal block skipping |
+| 	riton_fa3 | FA2 plus FA3's pipelined softmax/matmul order. No TMA, warp specialization or FP8 |
+| 	riton_fa4 | FA2 plus FA4's software exp2 (half of each tile) and conditional rescaling. No TMEM or 2-CTA |
+
+Constraints: self-attention only, dv == d, d a power of two in [16, 256] for the fused kernels.
+The forward saves L = m + log2(l) (base-2 logsumexp of scale * log2(e) * q.k); the backward
+recomputes P = exp2(s - L). FA3 and FA4 share the FA2 backward. Tests: 	ests/test_triton_attn.py.

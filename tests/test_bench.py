@@ -45,6 +45,29 @@ def test_sweep_writes_analysis_compatible_csv_and_resumes(tmp_path):
 
 
 @cuda
+def test_bnhd_layout_inputs_are_views_of_contiguous_storage(tmp_path):
+    # A method registered with layout="bnhd" must receive [B, H, N, d] views of
+    # contiguous [B, N, H, d] storage, and forward+backward must run through the sweep.
+    from bench import sweep
+
+    seen = []
+
+    def builder(seq_len, head_dim, device, seed):
+        def fn(q, k, v, causal=False, scale=None):
+            seen.append(q.transpose(1, 2).is_contiguous() and not q.is_contiguous())
+            return torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=causal)
+        return fn
+
+    methods.register("dummy_bnhd", builder, True, layout="bnhd")
+    q, k, v, leaves = methods.make_qkv("dummy_bnhd", (1, 4, 256, 64), torch.float32, "cuda", requires_grad=True)
+    assert q.shape == (1, 4, 256, 64) and leaves[0].shape == (1, 256, 4, 64) and leaves[0].is_leaf
+    sweep.main(["--methods", "dummy_bnhd", "--n", "256", "--heads", "4", "--head-dim", "64", "--dtype", "fp32",
+                "--repeats", "2", "--warmup", "1", "--pass-type", "both", "--out-dir", str(tmp_path)])
+    (runs,) = list(tmp_path.glob("*/runs.csv"))
+    assert len(load_runs(runs)) == 2 * 2 and seen and all(seen)
+
+
+@cuda
 def test_oom_is_logged_not_timed(tmp_path):
     from bench import sweep
 
