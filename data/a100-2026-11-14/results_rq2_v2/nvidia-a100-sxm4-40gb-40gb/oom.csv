@@ -1,0 +1,4 @@
+method,gpu,precision,mask,pass_type,N,batch_size,head_dim,heads,timestamp_utc
+triton_naive,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward,16384,1,128,128,2026-11-15T04:20:24Z
+triton_naive,NVIDIA A100-SXM4-40GB 40GB,BF16,causal,forward,16384,1,128,128,2026-11-15T04:20:45Z
+triton_naive,NVIDIA A100-SXM4-40GB 40GB,BF16,noncausal,forward_backward,8192,1,128,128,2026-11-15T04:20:58Z

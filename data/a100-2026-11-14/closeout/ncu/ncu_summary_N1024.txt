@@ -1,0 +1,61 @@
+== triton_naive fwd N=1024 causal   bytes, ns
+TOTAL triton_naive fwd N=1024  read_MB 39.9  write_MB 3.2  gpu_time_us 113.5
+  n=  2  read   23103616.0  write     931968.0  time      65664.0  _bmm_kernel
+  n=  1  read   16787072.0  write    2309760.0  time      47872.0  _softmax_fwd_kernel
+== triton_naive bwd N=1024 causal   bytes, ns
+TOTAL triton_naive bwd N=1024  read_MB 134.3  write_MB 9.5  gpu_time_us 279.5
+  n=  6  read   83990912.0  write     689408.0  time     197536.0  _bmm_kernel
+  n=  1  read   33564544.0  write    6498560.0  time      34112.0  _softmax_bwd_kernel
+  n=  1  read   16787328.0  write    2346112.0  time      47840.0  _softmax_fwd_kernel
+== triton_rabe_staats fwd N=1024 causal   bytes, ns
+TOTAL triton_rabe_staats fwd N=1024  read_MB 65.2  write_MB 22.8  gpu_time_us 152.5
+  n=  1  read   33559424.0  write    7188480.0  time      54656.0  _summary_kernel
+  n=  2  read   23105024.0  write   15606400.0  time      73600.0  _bmm_kernel
+  n=  1  read    4263296.0  write          0.0  time      12544.0  _finalize_kernel
+  n=  1  read    4262784.0  write          0.0  time      11744.0  _merge_kernel
+== triton_rabe_staats bwd N=1024 causal   bytes, ns
+TOTAL triton_rabe_staats bwd N=1024  read_MB 226.9  write_MB 67.2  gpu_time_us 451.7
+  n=  7  read  100797440.0  write   42411904.0  time     262304.0  _bmm_kernel
+  n=  1  read   67182720.0  write   17627008.0  time      65408.0  _bwd_elem_kernel
+  n=  1  read   33559296.0  write    7158016.0  time      54592.0  _summary_kernel
+  n=  3  read   12598784.0  write          0.0  time      21120.0  void at::vectorized_elementwise_kernel<4, at::bf
+  n=  1  read    4263296.0  write          0.0  time      12544.0  _finalize_kernel
+  n=  1  read    4262784.0  write          0.0  time      11776.0  _merge_kernel
+  n=  1  read    4212096.0  write          0.0  time       8352.0  _delta_kernel
+  n=  3  read      12032.0  write          0.0  time      15616.0  void at::vectorized_elementwise_kernel<4, at::Fi
+== triton_fa1 fwd N=1024 causal   bytes, ns
+TOTAL triton_fa1 fwd N=1024  read_MB 14.9  write_MB 0.0  gpu_time_us 774.4
+  n=  1  read   10593024.0  write          0.0  time     748128.0  _fa1_fwd_kernel
+  n=  1  read    4199296.0  write          0.0  time       7136.0  void at::vectorized_elementwise_kernel<4, at::bf
+  n=  1  read      70784.0  write          0.0  time       3648.0  void at::vectorized_elementwise_kernel<4, at::CU
+  n=  1  read      45056.0  write          0.0  time       3904.0  void at::vectorized_elementwise_kernel<4, at::lo
+  n=  3  read      12416.0  write        128.0  time      11616.0  void at::vectorized_elementwise_kernel<4, at::Fi
+== triton_fa1 bwd N=1024 causal   bytes, ns
+TOTAL triton_fa1 bwd N=1024  read_MB 36.0  write_MB 0.0  gpu_time_us 2404.4
+  n=  1  read   12670592.0  write       1024.0  time    1608704.0  _fa1_bwd_kernel
+  n=  1  read   10578816.0  write          0.0  time     748192.0  _fa1_fwd_kernel
+  n=  2  read    8398592.0  write          0.0  time      14272.0  void at::vectorized_elementwise_kernel<4, at::bf
+  n=  1  read    4212096.0  write          0.0  time       8832.0  _delta_kernel
+  n=  1  read      70784.0  write          0.0  time       3616.0  void at::vectorized_elementwise_kernel<4, at::CU
+  n=  1  read      44928.0  write          0.0  time       4000.0  void at::vectorized_elementwise_kernel<4, at::lo
+  n=  4  read      16256.0  write          0.0  time      16736.0  void at::vectorized_elementwise_kernel<4, at::Fi
+== triton_fa2 fwd N=1024 causal   bytes, ns
+TOTAL triton_fa2 fwd N=1024  read_MB 6.4  write_MB 0.0  gpu_time_us 92.9
+  n=  1  read    6353792.0  write        128.0  time      92928.0  _fa2_fwd_kernel
+== triton_fa2 bwd N=1024 causal   bytes, ns
+TOTAL triton_fa2 bwd N=1024  read_MB 27.5  write_MB 0.0  gpu_time_us 342.8
+  n=  1  read    8492928.0  write          0.0  time     115168.0  _fa2_bwd_dq_kernel
+  n=  1  read    8476544.0  write          0.0  time     126784.0  _fa2_bwd_kernel
+  n=  1  read    6363776.0  write          0.0  time      92544.0  _fa2_fwd_kernel
+  n=  1  read    4212096.0  write          0.0  time       8320.0  _delta_kernel
+== flash_attn fwd N=1024 causal   bytes, ns
+TOTAL flash_attn fwd N=1024  read_MB 19.0  write_MB 0.1  gpu_time_us 60.0
+  n=  1  read   12702976.0  write          0.0  time      22272.0  void flash_fwd_splitkv_combine_kernel<Flash_fwd_
+  n=  1  read    6337792.0  write     142464.0  time      37728.0  void flash_fwd_splitkv_kernel<Flash_fwd_kernel_t
+== flash_attn bwd N=1024 causal   bytes, ns
+TOTAL flash_attn bwd N=1024  read_MB 40.2  write_MB 0.1  gpu_time_us 208.3
+  n=  1  read   12750336.0  write        512.0  time     127968.0  void flash_bwd_dq_dk_dv_loop_seqk_parallel_kerne
+  n=  1  read   12702848.0  write        128.0  time      22848.0  void flash_fwd_splitkv_combine_kernel<Flash_fwd_
+  n=  1  read    6337792.0  write     121344.0  time      36864.0  void flash_fwd_splitkv_kernel<Flash_fwd_kernel_t
+  n=  1  read    4202752.0  write          0.0  time       9760.0  void flash_bwd_convert_dq_kernel<Flash_bwd_kerne
+  n=  1  read    4202240.0  write          0.0  time      10848.0  void flash_bwd_dot_do_o_kernel<1, Flash_bwd_kern
